@@ -9,17 +9,6 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;1,9..144,200&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<!-- PushAlert Unified Code -->
-<script type="text/javascript">
-    (function(d, t) {
-        var g = d.createElement(t),
-        s = d.getElementsByTagName(t)[0];
-        g.src = "https://cdn.pushalert.co/unified_5e65bcc2e484eea772fe0301c54f2b86.js";
-        s.parentNode.insertBefore(g, s);
-    }(document, "script"));
-</script>
-<!-- End PushAlert Unified Code -->
-
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -429,8 +418,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
         </button>
       </div>
       <button class="join-btn" onclick="openJoinChat()">
-        <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="9" y2="12"/></svg>
         Use someone's code
+      </button>
+      <button class="join-btn" style="margin-top:6px" id="notif-toggle-btn" onclick="toggleNotifications()">
+        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        Enable Notifications
       </button>
     </div>
   </div>
@@ -592,23 +585,71 @@ let reportTargetId   = null;
 let reportTargetName = null;
 
 /* ══════════════════════════════════════════════════════
-   PUSHALERT — notify when tab is hidden
+   SERVICE WORKER + NOTIFICATIONS
 ══════════════════════════════════════════════════════ */
-function triggerPushAlertNotification(title, message) {
-  // Only send if tab is not visible
-  if (document.visibilityState === 'visible') return;
+let swRegistration = null;
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
   try {
-    // PushAlert's JS API: show notification to the current subscriber
-    if (window.PushAlertCo && window.PushAlertCo.triggerNotification) {
-      window.PushAlertCo.triggerNotification(title, message, window.location.href);
-    }
+    swRegistration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    console.log('SW registered');
   } catch(e) {
-    // fallback: browser Notification API
-    if (Notification.permission === 'granted') {
-      new Notification(title, { body: message, icon: '/chatbubble/images/icon.png' });
-    }
+    console.warn('SW registration failed:', e);
   }
 }
+
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') {
+    showToast('Notifications blocked. Please enable in browser settings.', 'error');
+    return false;
+  }
+  const result = await Notification.requestPermission();
+  return result === 'granted';
+}
+
+function sendUserToSW(userId) {
+  // Wait for SW to be controlling the page then send the user ID
+  if (navigator.serviceWorker?.controller) {
+    navigator.serviceWorker.controller.postMessage({ type: 'SET_USER', userId });
+  } else {
+    navigator.serviceWorker?.ready.then(reg => {
+      reg.active?.postMessage({ type: 'SET_USER', userId });
+    });
+  }
+}
+
+function signOutSW() {
+  navigator.serviceWorker?.controller?.postMessage({ type: 'SIGN_OUT' });
+}
+
+// Update the notification button label based on current permission
+function updateNotifBtn() {
+  const btn = document.getElementById('notif-toggle-btn');
+  if (!btn) return;
+  if (!('Notification' in window)) { btn.style.display = 'none'; return; }
+  if (Notification.permission === 'granted') {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> Notifications On`;
+    btn.style.color = 'var(--accent)';
+  } else {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> Enable Notifications`;
+    btn.style.color = '';
+  }
+}
+
+async function toggleNotifications() {
+  const granted = await requestNotificationPermission();
+  if (granted) {
+    sendUserToSW(currentUser.id);
+    showToast('Notifications enabled!', 'success');
+  }
+  updateNotifBtn();
+}
+
+// Register SW immediately on page load
+registerServiceWorker();
 
 /* Soft two-tone chime using Web Audio */
 function playChime() {
@@ -627,6 +668,7 @@ function playChime() {
     });
   } catch(_) {}
 }
+
 
 /* ══════════════════════════════════════════════════════
    MOBILE SIDEBAR
@@ -706,7 +748,16 @@ async function handleSessionUser() {
   document.getElementById('dd-username-mobile').textContent = currentProfile.username;
   document.getElementById('my-chat-code').textContent = newCode;
 
+  // Update notification button state
+  updateNotifBtn();
+
   detectAndStoreIP();
+
+  // Send user ID to Service Worker so it can listen for messages
+  if (Notification.permission === 'granted') {
+    sendUserToSW(currentUser.id);
+  }
+  updateNotifBtn();
   showApp();
 }
 
@@ -827,6 +878,7 @@ function clearOnboardingError() {
 }
 async function doLogout() {
   closeUserDropdown();
+  signOutSW();
   await sb.auth.signOut();
 }
 
@@ -1005,12 +1057,8 @@ function subscribeToChat(chatId) {
       if (previewEl) previewEl.textContent = payload.content;
     }
 
-    // 🔔 Notification + chime for incoming message
+    // 🔔 Chime for incoming message (push handled server-side by Edge Function)
     playChime();
-    triggerPushAlertNotification(
-      `New message from ${escHtml(otherName)}`,
-      payload.content.length > 80 ? payload.content.slice(0, 80) + '…' : payload.content
-    );
   })
 
   // ── Presence: typing state ──
@@ -1046,7 +1094,6 @@ function subscribeToNewChats() {
     }, async () => {
       await loadChats();
       playChime();
-      triggerPushAlertNotification('Chat Bubble', 'Someone started a chat with you!');
     })
     .on('postgres_changes', {
       event: 'INSERT',
@@ -1056,7 +1103,6 @@ function subscribeToNewChats() {
     }, async () => {
       await loadChats();
       playChime();
-      triggerPushAlertNotification('Chat Bubble', 'Someone started a chat with you!');
     })
     .subscribe();
 }
