@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" href="images/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;1,9..144,200&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
@@ -404,7 +405,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
     </div>
 
     <div class="chat-list" id="chat-list">
-      <div class="chat-empty"><div class="chat-empty-icon">💬</div>No chats yet.<br>Use someone's code below.</div>
+      <div class="chat-empty"><div class="chat-empty-icon"><i class="fa-regular fa-comments"></i></div>No chats yet.<br>Use someone's code below.</div>
     </div>
 
     <div class="sidebar-footer">
@@ -422,7 +423,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
         Use someone's code
       </button>
       <button class="join-btn" style="margin-top:6px" id="notif-toggle-btn" onclick="toggleNotifications()">
-        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        <i class="fa-regular fa-bell" style="width:12px;font-size:12px"></i>
         Enable Notifications
       </button>
     </div>
@@ -628,7 +629,9 @@ function updateNotifBtn() {
   }
   const stored = localStorage.getItem('notif-enabled');
   const on = Notification.permission === 'granted' && stored !== 'false';
-  btn.textContent = on ? '🔔 Notifications On' : '🔕 Enable Notifications';
+  btn.innerHTML = on
+    ? '<i class="fa-solid fa-bell" style="width:12px;margin-right:6px"></i>Notifications On'
+    : '<i class="fa-regular fa-bell" style="width:12px;margin-right:6px"></i>Enable Notifications';
   btn.style.color = on ? 'var(--accent)' : '';
 }
 
@@ -940,7 +943,7 @@ async function loadChats() {
 function renderChatList() {
   const list = document.getElementById('chat-list');
   if (!chats.length) {
-    list.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div>No chats yet.<br>Use someone\'s code below.</div>';
+    list.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon"><i class="fa-regular fa-comments"></i></div>No chats yet.<br>Use someone\'s code below.</div>';
     return;
   }
   list.innerHTML = chats.map(chat => {
@@ -999,7 +1002,7 @@ async function loadMessages(chatId) {
     .order('created_at', { ascending: true });
 
   if (!messages?.length) {
-    wrap.innerHTML = '<div class="msg-placeholder" style="text-align:center;color:var(--text-dim);font-size:12px;padding:40px 0">No messages yet. Say hello! 👋</div>';
+    wrap.innerHTML = '<div class="msg-placeholder" style="text-align:center;color:var(--text-dim);font-size:12px;padding:40px 0">No messages yet. Say hello.</div>';
     return;
   }
 
@@ -1073,7 +1076,7 @@ function subscribeToChat(chatId) {
       if (previewEl) previewEl.textContent = payload.content;
     }
 
-    // 🔔 Chime for incoming message (push handled server-side by Edge Function)
+    // Chime for incoming message
     playChime();
   })
 
