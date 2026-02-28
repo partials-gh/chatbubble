@@ -792,7 +792,9 @@ async function doSignup() {
 });
   if (error) { showAuthError(error.message); btn.disabled = false; btn.textContent = 'Create Account'; return; }
   // Create profile immediately
-  await sb.from('profiles').insert({ id: data.user.id, username, chat_code: genChatCode() });
+  btn.disabled = false;
+btn.textContent = 'Create Account';
+alert('Account created! Please check your email to confirm.');
 }
 
 /* Username setup (GitHub OAuth new users) */
