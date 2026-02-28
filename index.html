@@ -780,7 +780,7 @@ async function doSignup() {
   const pw       = document.getElementById('signup-password').value;
   const btn      = document.getElementById('signup-btn');
   if (!username || !email || !pw) { showAuthError('Please fill in all fields.'); return; }
-  if (username.length < 2) { showAuthError('Username must be at least 2 characters.'); return; }
+  if (username.length < 5) { showAuthError('Username must be at least 5 characters.'); return; }
   if (!validatePassword(pw)) { showAuthError('Password must have 1 uppercase, 1 lowercase, 1 number, and 1 special character.'); return; }
   btn.disabled = true; btn.textContent = 'Creating account…';
   const { data, error } = await sb.auth.signUp({ email, password: pw });
