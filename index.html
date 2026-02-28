@@ -471,10 +471,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       </div>
 
       <div class="form-field">
-        <label class="form-label">Username</label>
-        <input class="form-input" id="signup-username" type="text" placeholder="cooluser" autocomplete="off" maxlength="20">
-      </div>
-      <div class="form-field">
         <label class="form-label">Email</label>
         <input class="form-input" id="signup-email" type="email" placeholder="you@email.com" autocomplete="email">
       </div>
@@ -492,15 +488,23 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       <div class="auth-switch">Already have an account? <a onclick="showLogin()">Sign in</a></div>
     </div>
 
-    <!-- ── USERNAME SETUP (after GitHub OAuth for new users) ── -->
+    <!-- ── ONBOARDING (all new users — email and GitHub) ── -->
     <div id="username-setup">
       <div class="auth-title">One more thing.</div>
-      <div class="auth-sub">Pick a username for Chat Bubble</div>
+      <div class="auth-sub">Before you start chatting, set up your profile</div>
       <div class="form-field">
         <label class="form-label">Username</label>
-        <input class="form-input" id="setup-username" type="text" placeholder="cooluser" autocomplete="off" maxlength="20">
+        <input class="form-input" id="setup-username" type="text" placeholder="cooluser" autocomplete="off" maxlength="20" oninput="clearOnboardingError()">
+        <div style="font-size:10px;color:var(--text-dim);margin-top:5px">2–20 characters. Letters and numbers only.</div>
       </div>
-      <button class="auth-btn" id="setup-btn" onclick="doUsernameSetup()">Continue</button>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;-webkit-user-select:none;user-select:none">
+          <input type="checkbox" id="tos-checkbox" style="margin-top:2px;accent-color:var(--accent);width:13px;height:13px;flex-shrink:0;cursor:pointer">
+          <span style="font-size:12px;color:var(--text-muted);line-height:1.6">I agree to follow all TOS and common sense.</span>
+        </label>
+      </div>
+      <div class="auth-global-error" id="onboarding-error" style="display:none"></div>
+      <button class="auth-btn" id="setup-btn" onclick="doUsernameSetup()">Enter Chat Bubble</button>
     </div>
 
   </div>
@@ -772,39 +776,53 @@ async function doLogin() {
   if (error) { showAuthError(error.message); btn.disabled = false; btn.textContent = 'Sign In'; }
 }
 
-/* Email signup */
+/* Email signup — just creates the auth user, onboarding inserts the profile */
 async function doSignup() {
   clearAuthError();
-  const username = document.getElementById('signup-username').value.trim();
-  const email    = document.getElementById('signup-email').value.trim();
-  const pw       = document.getElementById('signup-password').value;
-  const btn      = document.getElementById('signup-btn');
-  if (!username || !email || !pw) { showAuthError('Please fill in all fields.'); return; }
-  if (username.length < 2) { showAuthError('Username must be at least 2 characters.'); return; }
+  const email = document.getElementById('signup-email').value.trim();
+  const pw    = document.getElementById('signup-password').value;
+  const btn   = document.getElementById('signup-btn');
+  if (!email || !pw) { showAuthError('Please fill in all fields.'); return; }
   if (!validatePassword(pw)) { showAuthError('Password must have 1 uppercase, 1 lowercase, 1 number, and 1 special character.'); return; }
   btn.disabled = true; btn.textContent = 'Creating account…';
-  const { data, error } = await sb.auth.signUp({ email, password: pw });
+  const { error } = await sb.auth.signUp({ email, password: pw });
   if (error) { showAuthError(error.message); btn.disabled = false; btn.textContent = 'Create Account'; return; }
-  // Create profile immediately
-  await sb.from('profiles').insert({ id: data.user.id, username, chat_code: genChatCode() });
+  // onAuthStateChange will fire → handleSessionUser → no profile found → showUsernameSetup
 }
 
-/* Username setup (GitHub OAuth new users) */
+/* Onboarding — used by ALL new users (email signup + GitHub OAuth) */
 async function doUsernameSetup() {
-  clearAuthError();
   const username = document.getElementById('setup-username').value.trim();
+  const tos      = document.getElementById('tos-checkbox').checked;
   const btn      = document.getElementById('setup-btn');
-  if (!username || username.length < 2) { showAuthError('Username must be at least 2 characters.'); return; }
-  btn.disabled = true; btn.textContent = 'Saving…';
+  const errEl    = document.getElementById('onboarding-error');
 
-  // Check if username is taken
+  errEl.style.display = 'none'; errEl.textContent = '';
+
+  if (!username || username.length < 2) { showOnboardingError('Username must be at least 2 characters.'); return; }
+  if (!/^[a-zA-Z0-9_]+$/.test(username)) { showOnboardingError('Username can only contain letters, numbers, and underscores.'); return; }
+  if (!tos) { showOnboardingError('You must agree to the TOS to continue.'); return; }
+
+  btn.disabled = true; btn.textContent = 'Checking…';
+
   const { data: existing } = await sb.from('profiles').select('id').eq('username', username).maybeSingle();
-  if (existing) { showAuthError('Username is already taken. Try another.'); btn.disabled = false; btn.textContent = 'Continue'; return; }
+  if (existing) { showOnboardingError('That username is taken. Try another.'); btn.disabled = false; btn.textContent = 'Enter Chat Bubble'; return; }
 
+  btn.textContent = 'Setting up…';
   const { error } = await sb.from('profiles').insert({ id: currentUser.id, username, chat_code: genChatCode() });
-  if (error) { showAuthError(error.message); btn.disabled = false; btn.textContent = 'Continue'; return; }
+  if (error) { showOnboardingError(error.message); btn.disabled = false; btn.textContent = 'Enter Chat Bubble'; return; }
 
   await handleSessionUser();
+}
+
+function showOnboardingError(msg) {
+  const el = document.getElementById('onboarding-error');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function clearOnboardingError() {
+  const el = document.getElementById('onboarding-error');
+  if (el) { el.style.display = 'none'; el.textContent = ''; }
 }
 
 async function doLogout() {
