@@ -249,6 +249,52 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .toast.success { border-color: rgba(74,222,128,0.3); color: var(--accent); }
 .toast.error { border-color: rgba(248,113,113,0.3); color: var(--danger); }
 
+/* In-app notification banner */
+.notif-banner {
+  position: fixed;
+  top: 16px; right: 16px;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface2);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 12px 14px;
+  z-index: 9998;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  cursor: pointer;
+  transform: translateX(calc(100% + 32px));
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.2,0,0,1), opacity 0.3s;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.notif-banner.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+.notif-banner:hover { border-color: var(--accent); }
+.notif-banner-icon {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(74,222,128,0.2);
+  display: grid; place-items: center;
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 11px;
+}
+.notif-banner-body { flex: 1; min-width: 0; }
+.notif-banner-title { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 2px; }
+.notif-banner-name { font-size: 13px; color: var(--text); margin-bottom: 2px; font-family: var(--serif); font-weight: 200; }
+.notif-banner-msg { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notif-banner-close {
+  width: 18px; height: 18px; border-radius: 4px; border: none; background: none;
+  color: var(--text-dim); cursor: pointer; display: grid; place-items: center;
+  font-size: 11px; flex-shrink: 0; transition: color 0.12s;
+}
+.notif-banner-close:hover { color: var(--text); }
+
 * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 
 .typing-indicator { padding: 0 16px 8px; font-size: 11px; color: var(--text-dim); min-height: 24px; display: flex; align-items: center; gap: 6px; }
@@ -563,6 +609,17 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
 <div class="toast" id="toast"></div>
 
+<!-- In-app notification banner -->
+<div class="notif-banner" id="notif-banner" onclick="notifBannerClick()">
+  <div class="notif-banner-icon"><i class="fa-regular fa-message"></i></div>
+  <div class="notif-banner-body">
+    <div class="notif-banner-title">New Message</div>
+    <div class="notif-banner-name" id="notif-banner-name"></div>
+    <div class="notif-banner-msg" id="notif-banner-msg"></div>
+  </div>
+  <button class="notif-banner-close" onclick="dismissNotifBanner(event)"><i class="fa-solid fa-xmark"></i></button>
+</div>
+
 <script>
 /* ══════════════════════════════════════════════════════
    CONFIG
@@ -586,49 +643,108 @@ let reportTargetId   = null;
 let reportTargetName = null;
 
 /* ══════════════════════════════════════════════════════
-   SERVICE WORKER + NOTIFICATIONS
+   IN-APP NOTIFICATION BANNER
 ══════════════════════════════════════════════════════ */
+let notifBannerTimer = null;
+let notifBannerChatId = null;
+
+function showNotifBanner(senderName, message, chatId) {
+  // Don't show if the user is already in that chat
+  if (currentChatId === chatId && !document.hidden) return;
+
+  notifBannerChatId = chatId;
+  document.getElementById('notif-banner-name').textContent = senderName;
+  document.getElementById('notif-banner-msg').textContent = message;
+
+  const banner = document.getElementById('notif-banner');
+  banner.classList.add('show');
+
+  // Flash tab title
+  let flashing = true;
+  const origTitle = document.title;
+  const flashInterval = setInterval(() => {
+    document.title = flashing ? `${senderName} sent a message` : 'Chat Bubble';
+    flashing = !flashing;
+  }, 1200);
+
+  // Auto-dismiss after 5s
+  clearTimeout(notifBannerTimer);
+  notifBannerTimer = setTimeout(() => {
+    banner.classList.remove('show');
+    clearInterval(flashInterval);
+    document.title = origTitle;
+  }, 5000);
+
+  // Store flash interval on banner so we can clear on click
+  banner._flashInterval = flashInterval;
+  banner._origTitle = origTitle;
+
+  playChime();
+}
+
+function dismissNotifBanner(e) {
+  if (e) e.stopPropagation();
+  const banner = document.getElementById('notif-banner');
+  banner.classList.remove('show');
+  clearTimeout(notifBannerTimer);
+  if (banner._flashInterval) { clearInterval(banner._flashInterval); document.title = banner._origTitle || 'Chat Bubble'; }
+}
+
+function notifBannerClick() {
+  const chatId = notifBannerChatId;
+  dismissNotifBanner();
+  if (chatId) openChat(chatId);
+}
+
+/* ══════════════════════════════════════════════════════
+   SERVICE WORKER + WEB PUSH
+══════════════════════════════════════════════════════ */
+// Replace with your own: npx web-push generate-vapid-keys
+const VAPID_PUBLIC_KEY = 'BAGF9ifRvcWAfM20PFwOhhbUyYo3CjkbGg_UHYa1Xf9YO-Yf5clF_are27WODx7TSBiB3F6v8YsEWApz41KDJqY';
+
 let swRegistration = null;
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   try {
     swRegistration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
-  } catch(e) {
-    console.warn('SW registration failed:', e);
-  }
+  } catch(e) { console.warn('SW registration failed:', e); }
 }
 
-// Send user ID + auth token to SW so it can call Supabase
-async function sendUserToSW() {
-  if (!currentUser) return;
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session?.access_token) return;
+function urlBase64ToUint8Array(b64) {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g,'+').replace(/_/g,'/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
 
-  // Wait until SW is controlling the page
+async function subscribeToPush() {
+  if (!swRegistration) await registerServiceWorker();
   await navigator.serviceWorker.ready;
-  const ctrl = navigator.serviceWorker.controller;
-  if (!ctrl) return;
-
-  ctrl.postMessage({
-    type: 'SET_USER',
-    userId: currentUser.id,
-    token: session.access_token
-  });
+  let sub = await swRegistration.pushManager.getSubscription();
+  if (!sub) {
+    sub = await swRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+  }
+  await sb.from('profiles').update({ push_subscription: JSON.stringify(sub) }).eq('id', currentUser.id);
+  return sub;
 }
 
-function signOutSW() {
-  navigator.serviceWorker?.controller?.postMessage({ type: 'SIGN_OUT' });
+async function unsubscribeFromPush() {
+  if (!swRegistration) return;
+  const sub = await swRegistration.pushManager.getSubscription();
+  if (sub) await sub.unsubscribe();
+  await sb.from('profiles').update({ push_subscription: null }).eq('id', currentUser.id);
 }
+
+function signOutSW() {}
 
 function updateNotifBtn() {
   const btn = document.getElementById('notif-toggle-btn');
   if (!btn) return;
-  if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-    btn.style.display = 'none'; return;
-  }
-  const stored = localStorage.getItem('notif-enabled');
-  const on = Notification.permission === 'granted' && stored !== 'false';
+  if (!('Notification' in window) || !('PushManager' in window)) { btn.style.display = 'none'; return; }
+  const on = Notification.permission === 'granted' && localStorage.getItem('notif-enabled') === 'true';
   btn.innerHTML = on
     ? '<i class="fa-solid fa-bell" style="width:12px;margin-right:6px"></i>Notifications On'
     : '<i class="fa-regular fa-bell" style="width:12px;margin-right:6px"></i>Enable Notifications';
@@ -636,39 +752,35 @@ function updateNotifBtn() {
 }
 
 async function toggleNotifications() {
-  if (!('Notification' in window)) {
-    showToast('Notifications not supported in this browser.', 'error'); return;
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    showToast('Push notifications not supported in this browser.', 'error'); return;
   }
-
-  const stored = localStorage.getItem('notif-enabled');
-  const currentlyOn = Notification.permission === 'granted' && stored !== 'false';
-
-  if (currentlyOn) {
-    // DISABLE
+  const on = Notification.permission === 'granted' && localStorage.getItem('notif-enabled') === 'true';
+  if (on) {
     localStorage.setItem('notif-enabled', 'false');
-    navigator.serviceWorker?.controller?.postMessage({ type: 'DISABLE' });
+    await unsubscribeFromPush();
     showToast('Notifications disabled.', '');
     updateNotifBtn();
     return;
   }
-
-  // ENABLE — request permission if needed
-  let permission = Notification.permission;
-  if (permission === 'default') {
-    permission = await Notification.requestPermission();
-  }
-  if (permission === 'denied') {
-    showToast('Notifications blocked — please enable in your browser settings.', 'error'); return;
-  }
-  if (permission === 'granted') {
+  const permission = await Notification.requestPermission();
+  if (permission === 'denied') { showToast('Notifications blocked — enable in browser settings.', 'error'); return; }
+  if (permission !== 'granted') return;
+  try {
+    await subscribeToPush();
     localStorage.setItem('notif-enabled', 'true');
-    await sendUserToSW();
-    showToast('Notifications enabled!', 'success');
-    updateNotifBtn();
-  }
+    showToast('Notifications enabled.', 'success');
+  } catch(e) { showToast('Could not subscribe: ' + e.message, 'error'); }
+  updateNotifBtn();
 }
 
-// Register SW immediately on page load
+async function restorePushSubscription() {
+  if (localStorage.getItem('notif-enabled') === 'true' && Notification.permission === 'granted') {
+    try { await subscribeToPush(); } catch(_) {}
+  }
+  updateNotifBtn();
+}
+
 registerServiceWorker();
 
 /* Soft two-tone chime using Web Audio */
@@ -772,11 +884,7 @@ async function handleSessionUser() {
   updateNotifBtn();
 
   detectAndStoreIP();
-
-  // Re-connect SW if notifications were already enabled
-  if (Notification.permission === 'granted' && localStorage.getItem('notif-enabled') !== 'false') {
-    sendUserToSW();
-  }
+  restorePushSubscription();
   showApp();
 }
 
@@ -1076,8 +1184,9 @@ function subscribeToChat(chatId) {
       if (previewEl) previewEl.textContent = payload.content;
     }
 
-    // Chime for incoming message
+    // Chime + in-app banner for incoming message
     playChime();
+    showNotifBanner(otherName, payload.content, chatId);
   })
 
   // ── Presence: typing state ──
