@@ -1,4 +1,4 @@
-  <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -7,16 +7,7 @@
 <link rel="icon" type="image/png" href="images/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;1,9..144,200&display=swap" rel="stylesheet">
-<<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-<script>
-  const SUPABASE_URL  = 'https://wkgjqpcjoctfoovdtbxf.supabase.co';
-  const SUPABASE_ANON = 'sb_publishable_GEMM0Aw5hDIH7QNV_Uq_hQ_iSE5LeO7';
-
-  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-
-  // all your other JS goes BELOW this
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -788,56 +779,22 @@ async function doSignup() {
   const email    = document.getElementById('signup-email').value.trim();
   const pw       = document.getElementById('signup-password').value;
   const btn      = document.getElementById('signup-btn');
-
-  if (!username || !email || !pw) {
-    showAuthError('Please fill in all fields.');
-    return;
-  }
-  if (username.length < 5) {
-    showAuthError('Username must be at least 5 characters.');
-    return;
-  }
-  if (!validatePassword(pw)) {
-    showAuthError('Password must have 1 uppercase, 1 lowercase, 1 number, and 1 special character.');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Creating account…';
-
-  const { data, error } = await sb.auth.signUp({
-  email,
-  password: pw,
-  options: { emailRedirectTo: '', emailConfirm: false }  // disables confirmation email
-});
-
-  if (error) {
-    showAuthError(error.message);
-    btn.disabled = false;
-    btn.textContent = 'Create Account';
-    return;
-  }
-
+  if (!username || !email || !pw) { showAuthError('Please fill in all fields.'); return; }
+  if (username.length < 2) { showAuthError('Username must be at least 2 characters.'); return; }
+  if (!validatePassword(pw)) { showAuthError('Password must have 1 uppercase, 1 lowercase, 1 number, and 1 special character.'); return; }
+  btn.disabled = true; btn.textContent = 'Creating account…';
+  const { data, error } = await sb.auth.signUp({ email, password: pw });
+  if (error) { showAuthError(error.message); btn.disabled = false; btn.textContent = 'Create Account'; return; }
   // Create profile immediately
-  await sb.from('profiles').insert({
-    id: data.user.id,
-    username,
-    chat_code: genChatCode()
-  });
-
-  // Store session token locally
-  localStorage.setItem('sb_access_token', data.session?.access_token);
-
-  btn.textContent = 'Account created!';
-  // Optional: redirect to dashboard after a short delay
-  setTimeout(() => { window.location.href = '/index.html'; }, 1000);
+  await sb.from('profiles').insert({ id: data.user.id, username, chat_code: genChatCode() });
 }
+
 /* Username setup (GitHub OAuth new users) */
 async function doUsernameSetup() {
   clearAuthError();
   const username = document.getElementById('setup-username').value.trim();
   const btn      = document.getElementById('setup-btn');
-  if (!username || username.length < 5) { showAuthError('Username must be at least 5 characters.'); return; }
+  if (!username || username.length < 2) { showAuthError('Username must be at least 2 characters.'); return; }
   btn.disabled = true; btn.textContent = 'Saving…';
 
   // Check if username is taken
