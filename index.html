@@ -796,10 +796,11 @@ async function doSignup() {
   btn.disabled = true;
   btn.textContent = 'Creating account…';
 
-  const { data, error } = await sb.auth.signUp(
-    { email, password: pw },
-    { redirectTo: window.location.origin } // stay on the same page
-  );
+  const { data, error } = await sb.auth.signUp({
+  email,
+  password: pw,
+  options: { emailRedirectTo: '', emailConfirm: false }  // disables confirmation email
+});
 
   if (error) {
     showAuthError(error.message);
