@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -752,7 +752,7 @@ async function doGithubAuth() {
   clearAuthError();
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'github',
-    options: { redirectTo: window.location.href }
+    options: { redirectTo: 'https://partials-gh.github.io/chatbubble/' }
   });
   if (error) {
     showAuthError(error.message);
