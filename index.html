@@ -673,15 +673,23 @@ let typingTimeout    = null;
    INIT
 ══════════════════════════════════════════════════════ */
 async function init() {
-  // Handle OAuth redirect (GitHub sends user back to this page)
+  let initialSessionHandled = false;
+
   const { data: { session } } = await sb.auth.getSession();
   if (session) {
+    initialSessionHandled = true;
     currentUser = session.user;
     await handleSessionUser();
   }
 
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session) {
+      // Skip if we already handled this session on page load
+      if (initialSessionHandled && session.user.id === currentUser?.id) {
+        initialSessionHandled = false;
+        return;
+      }
+      initialSessionHandled = false;
       currentUser = session.user;
       await handleSessionUser();
     } else if (event === 'SIGNED_OUT') {
@@ -928,6 +936,9 @@ function renderChatList() {
 
 async function openChat(chatId) {
   currentChatId = chatId;
+  // Clear typing indicator when switching chats
+  const indicator = document.getElementById('typing-indicator');
+  indicator.innerHTML = ''; indicator.classList.remove('visible');
   renderChatList();
   const chat = chats.find(c => c.id === chatId);
   if (!chat) return;
@@ -961,9 +972,14 @@ async function loadMessages(chatId) {
     const dateStr = new Date(msg.created_at).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
     if (dateStr !== lastDate) {
       lastDate = dateStr;
-      wrap.innerHTML += `<div class="msg-date-divider">${dateStr}</div>`;
+      const divider = document.createElement('div');
+      divider.className = 'msg-date-divider';
+      divider.textContent = dateStr;
+      wrap.appendChild(divider);
     }
-    wrap.innerHTML += renderMessage(msg);
+    const tmp = document.createElement('div');
+    tmp.innerHTML = renderMessage(msg);
+    wrap.appendChild(tmp.firstElementChild);
   });
   wrap.scrollTop = wrap.scrollHeight;
 }
@@ -971,7 +987,7 @@ async function loadMessages(chatId) {
 function renderMessage(msg) {
   const mine = msg.user_id === currentUser.id;
   const time = new Date(msg.created_at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-  const initial = (msg.profiles?.username?.[0] || '?').toUpperCase();
+  const initial = escHtml((msg.profiles?.username?.[0] || '?').toUpperCase());
   return `<div class="msg-row ${mine ? 'mine' : ''}">
     <div class="msg-avatar ${mine ? 'hidden' : ''}">${initial}</div>
     <div class="msg-bubble">${escHtml(msg.content)}</div>
@@ -988,6 +1004,8 @@ function subscribeToChat(chatId) {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` },
       async payload => {
         const msg = payload.new;
+        // Only render if we're still on this chat
+        if (currentChatId !== chatId) return;
         const { data: profile } = await sb.from('profiles').select('username').eq('id', msg.user_id).single();
         msg.profiles = profile;
         const wrap = document.getElementById('messages-wrap');
@@ -997,8 +1015,13 @@ function subscribeToChat(chatId) {
         tmp.innerHTML = renderMessage(msg);
         wrap.appendChild(tmp.firstElementChild);
         wrap.scrollTop = wrap.scrollHeight;
+        // Update sidebar preview without re-rendering the whole list
         const chat = chats.find(c => c.id === chatId);
-        if (chat) { chat.last_message = msg.content; renderChatList(); }
+        if (chat) {
+          chat.last_message = msg.content;
+          const previewEl = document.querySelector(`.chat-item[onclick="openChat('${chatId}')"] .chat-item-preview`);
+          if (previewEl) previewEl.textContent = msg.content;
+        }
       }
     ).subscribe();
 
@@ -1043,7 +1066,8 @@ async function sendMessage() {
   autoResize(input);
   // Stop typing indicator immediately on send
   if (typingChannel) { clearTimeout(typingTimeout); typingChannel.track({ typing: false }); }
-  await sb.from('messages').insert({ chat_id: currentChatId, user_id: currentUser.id, content });
+  const { error: msgErr } = await sb.from('messages').insert({ chat_id: currentChatId, user_id: currentUser.id, content });
+  if (msgErr) { showToast('Failed to send message.', 'error'); input.value = content; autoResize(input); return; }
   await sb.from('chats').update({ updated_at: new Date().toISOString(), last_message: content }).eq('id', currentChatId);
 }
 
@@ -1148,6 +1172,9 @@ async function confirmDeleteChat() {
   if (currentChatId === pendingDeleteId) {
     currentChatId = null;
     if (chatSubscription) { chatSubscription.unsubscribe(); chatSubscription = null; }
+    if (typingChannel) { typingChannel.unsubscribe(); typingChannel = null; }
+    const indicator = document.getElementById('typing-indicator');
+    indicator.innerHTML = ''; indicator.classList.remove('visible');
     document.getElementById('chat-header').classList.remove('visible');
     document.getElementById('messages-wrap').classList.remove('visible');
     document.getElementById('chat-input-bar').classList.remove('visible');
@@ -1163,9 +1190,11 @@ async function confirmDeleteChat() {
    UTILS
 ══════════════════════════════════════════════════════ */
 function copyMyChatCode() {
-  const code = currentProfile?.chat_code;
-  if (!code) return;
-  navigator.clipboard.writeText(code).then(() => showToast('Chat code copied!', 'success'));
+  const code = document.getElementById('my-chat-code').textContent;
+  if (!code || code === '——————') return;
+  navigator.clipboard.writeText(code).then(() => showToast('Chat code copied!', 'success')).catch(() => {
+    showToast('Could not copy — try manually.', 'error');
+  });
 }
 
 function showToast(msg, type = '') {
@@ -1180,7 +1209,11 @@ function escHtml(str) {
 
 document.querySelectorAll('.modal-backdrop').forEach(el => {
   el.addEventListener('mousedown', function(e) {
-    if (e.target === this) { this.classList.remove('visible'); if (this.id === 'delete-modal') pendingDeleteId = null; }
+    if (e.target === this) {
+      this.classList.remove('visible');
+      if (this.id === 'delete-modal') pendingDeleteId = null;
+      if (this.id === 'report-modal') { reportTargetId = null; reportTargetName = null; }
+    }
   });
 });
 
@@ -1188,13 +1221,15 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-backdrop').forEach(el => el.classList.remove('visible'));
     pendingDeleteId = null;
+    reportTargetId = null;
+    reportTargetName = null;
   }
 });
 
 init();
 </script>
 <div id="ctx-menu">
-  <button class="ctx-item" onclick="ctxReport()">
+  <button class="ctx-item" id="ctx-report-btn" onclick="ctxReport()">
     <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
     Report User
   </button>
@@ -1202,8 +1237,8 @@ init();
     <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
     Refresh Page
   </button>
-  <div class="ctx-sep"></div>
-  <button class="ctx-item danger" onclick="ctxLogout()">
+  <div class="ctx-sep" id="ctx-sep"></div>
+  <button class="ctx-item danger" id="ctx-logout-btn" onclick="ctxLogout()">
     <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     Log Out
   </button>
@@ -1284,12 +1319,15 @@ const ctxMenu = document.getElementById('ctx-menu');
 
 document.addEventListener('contextmenu', e => {
   e.preventDefault();
-  // Only show when logged in
-  if (!currentUser) return;
   const x = Math.min(e.clientX, window.innerWidth - 190);
   const y = Math.min(e.clientY, window.innerHeight - 130);
   ctxMenu.style.left = x + 'px';
   ctxMenu.style.top  = y + 'px';
+  // Show/hide items based on login state
+  const loggedIn = !!currentUser;
+  document.getElementById('ctx-report-btn').style.display = loggedIn ? 'flex' : 'none';
+  document.getElementById('ctx-logout-btn').style.display = loggedIn ? 'flex' : 'none';
+  document.getElementById('ctx-sep').style.display        = loggedIn ? 'block' : 'none';
   ctxMenu.classList.add('visible');
 });
 
