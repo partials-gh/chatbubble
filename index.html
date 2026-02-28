@@ -7,7 +7,16 @@
 <link rel="icon" type="image/png" href="images/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;1,9..144,200&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/supabase.min.js"></script>
+<<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+  const SUPABASE_URL  = 'https://wkgjqpcjoctfoovdtbxf.supabase.co';
+  const SUPABASE_ANON = 'sb_publishable_GEMM0Aw5hDIH7QNV_Uq_hQ_iSE5LeO7';
+
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // all your other JS goes BELOW this
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
