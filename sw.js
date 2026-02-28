@@ -96,7 +96,7 @@ async function poll() {
       const focused   = clients.some(c => c.url.startsWith(APP_URL) && c.focused);
       if (focused) continue;
 
-      self.registration.showNotification(`💬 ${sender}`, {
+      self.registration.showNotification(`New message from ${sender}`, {
         body,
         icon:     APP_URL + 'images/icon.png',
         badge:    APP_URL + 'images/icon.png',
