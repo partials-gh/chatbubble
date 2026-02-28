@@ -794,7 +794,7 @@ async function doUsernameSetup() {
   clearAuthError();
   const username = document.getElementById('setup-username').value.trim();
   const btn      = document.getElementById('setup-btn');
-  if (!username || username.length < 2) { showAuthError('Username must be at least 2 characters.'); return; }
+  if (!username || username.length < 5) { showAuthError('Username must be at least 5 characters.'); return; }
   btn.disabled = true; btn.textContent = 'Saving…';
 
   // Check if username is taken
