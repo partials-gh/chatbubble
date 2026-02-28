@@ -783,7 +783,13 @@ async function doSignup() {
   if (username.length < 5) { showAuthError('Username must be at least 5 characters.'); return; }
   if (!validatePassword(pw)) { showAuthError('Password must have 1 uppercase, 1 lowercase, 1 number, and 1 special character.'); return; }
   btn.disabled = true; btn.textContent = 'Creating account…';
-  const { data, error } = await sb.auth.signUp({ email, password: pw });
+  const { data, error } = await sb.auth.signUp({
+  email,
+  password: pw,
+  options: {
+    emailRedirectTo: 'https://wkgjqpcjoctfoovdtbxf.supabase.co/auth/v1/callback'
+  }
+});
   if (error) { showAuthError(error.message); btn.disabled = false; btn.textContent = 'Create Account'; return; }
   // Create profile immediately
   await sb.from('profiles').insert({ id: data.user.id, username, chat_code: genChatCode() });
