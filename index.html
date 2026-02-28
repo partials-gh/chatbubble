@@ -779,24 +779,49 @@ async function doSignup() {
   const email    = document.getElementById('signup-email').value.trim();
   const pw       = document.getElementById('signup-password').value;
   const btn      = document.getElementById('signup-btn');
-  if (!username || !email || !pw) { showAuthError('Please fill in all fields.'); return; }
-  if (username.length < 5) { showAuthError('Username must be at least 5 characters.'); return; }
-  if (!validatePassword(pw)) { showAuthError('Password must have 1 uppercase, 1 lowercase, 1 number, and 1 special character.'); return; }
-  btn.disabled = true; btn.textContent = 'Creating account…';
-  const { data, error } = await sb.auth.signUp({
-  email,
-  password: pw,
-  options: {
-    emailRedirectTo: 'https://wkgjqpcjoctfoovdtbxf.supabase.co/auth/v1/callback'
-  }
-});
-  if (error) { showAuthError(error.message); btn.disabled = false; btn.textContent = 'Create Account'; return; }
-  // Create profile immediately
-  btn.disabled = false;
-btn.textContent = 'Create Account';
-alert('Account created! Please check your email to confirm.');
-}
 
+  if (!username || !email || !pw) {
+    showAuthError('Please fill in all fields.');
+    return;
+  }
+  if (username.length < 5) {
+    showAuthError('Username must be at least 5 characters.');
+    return;
+  }
+  if (!validatePassword(pw)) {
+    showAuthError('Password must have 1 uppercase, 1 lowercase, 1 number, and 1 special character.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Creating account…';
+
+  const { data, error } = await sb.auth.signUp(
+    { email, password: pw },
+    { redirectTo: window.location.origin } // stay on the same page
+  );
+
+  if (error) {
+    showAuthError(error.message);
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+    return;
+  }
+
+  // Create profile immediately
+  await sb.from('profiles').insert({
+    id: data.user.id,
+    username,
+    chat_code: genChatCode()
+  });
+
+  // Store session token locally
+  localStorage.setItem('sb_access_token', data.session?.access_token);
+
+  btn.textContent = 'Account created!';
+  // Optional: redirect to dashboard after a short delay
+  setTimeout(() => { window.location.href = '/dashboard.html'; }, 1000);
+}
 /* Username setup (GitHub OAuth new users) */
 async function doUsernameSetup() {
   clearAuthError();
